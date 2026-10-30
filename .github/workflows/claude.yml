@@ -94,8 +94,9 @@ jobs:
           # scope. The action runs with acceptEdits, so the edit tools are
           # denied too (this job has nothing to edit). The action stores the App
           # token in the remote URL in .git/config, so reads under .git/ are
-          # denied to keep it out of anything Claude could post.
+          # denied, and so is `gh --body-file`/`-F`, which reads a file itself.
+          # The action also revokes that token when the run ends.
           claude_args: |
             --model claude-fable-5-1
-            --disallowedTools "Edit,MultiEdit,Write,NotebookEdit,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,Read(./.git/**)"
+            --disallowedTools "Edit,MultiEdit,Write,NotebookEdit,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,Read(./.git/**),Bash(gh *--body-file*),Bash(gh *-F*)"
             --allowedTools "Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr view:*)"
