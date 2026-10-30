@@ -29,6 +29,12 @@ on:
 permissions:
   contents: read
 
+# One run at a time per issue or PR, so a burst of mentions queues instead of
+# racing to reply on the same thread.
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   claude:
     name: Claude
@@ -52,9 +58,9 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Least privilege: this workflow files issues and comments, which needs no
-    # push access. Raise `contents` to `write` only if you want @claude to push
-    # branches and commits.
+    # These scopes cover only GITHUB_TOKEN. Claude itself acts with the Claude
+    # GitHub App token, whose scope comes from the App installation, so write
+    # access to code is blocked in `claude_args` below rather than here.
     permissions:
       contents: read
       issues: write
@@ -64,6 +70,7 @@ jobs:
       # issues show as `claude[bot]`. It grants no access to cloud providers
       # unless a cloud trust policy is configured for this repository.
       id-token: write
+      # Lets the action's CI tools read workflow runs and job logs on PRs.
       actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
@@ -72,17 +79,25 @@ jobs:
           persist-credentials: false
 
       - name: Run Claude
-        uses: anthropics/claude-code-action@c3d45e8e941e1b2ad7b278c57482d9c5bf1f35b3 # v1.0.99
+        # v1.0.260+ checks fork PRs out into `pr-<number>`, so a fork branch
+        # named `main` no longer collides with the base checkout.
+        uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # With API commit signing the action offers its commit_files and
+          # delete_files tools instead of `git add/commit/rm` and its push
+          # wrapper; both are denied below, so @claude cannot change code.
+          use_commit_signing: true
           # Only issue commands plus read-only `gh pr view`; `gh pr edit` is left
           # out so PR text can't steer Claude into changing a PR's base, body or
           # reviewers. cargo is deliberately not allowed and there is no Rust
-          # toolchain step: build.rs, proc macros
-          # and test binaries would run checked-out (possibly fork) code with
-          # the subscription token in scope. The action runs with acceptEdits,
-          # so the edit tools are denied too (this job has nothing to edit).
+          # toolchain step: build.rs, proc macros and test binaries would run
+          # checked-out (possibly fork) code with the subscription token in
+          # scope. The action runs with acceptEdits, so the edit tools are
+          # denied too (this job has nothing to edit). The action stores the App
+          # token in the remote URL in .git/config, so reads under .git/ are
+          # denied to keep it out of anything Claude could post.
           claude_args: |
             --model claude-fable-5-1
-            --disallowedTools "Edit,MultiEdit,Write,NotebookEdit"
+            --disallowedTools "Edit,MultiEdit,Write,NotebookEdit,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,Read(./.git/**)"
             --allowedTools "Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr view:*)"
