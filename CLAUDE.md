@@ -10,7 +10,7 @@ The design source of truth is the Notion page "dreadmind — Research Guide: How
 
 ## Current state
 
-The repo is pre-code. It holds only `README.md`, `LICENSE`, a Cargo-generated `.gitignore`, and `.github/workflows/claude.yml`. There is no `Cargo.toml` yet. Once the crate exists, use the usual Cargo commands: `cargo build`, `cargo test`, `cargo test <name>` for a single test, `cargo clippy`, and `cargo fmt`. Add any project-specific commands here once they exist.
+The repo is pre-code: there is no `Cargo.toml` and no Lua or Rust source yet. Once the crate exists, use the usual Cargo commands: `cargo build`, `cargo test`, `cargo test <name>` for a single test, `cargo clippy`, and `cargo fmt`. Add any project-specific commands here once they exist.
 
 ## Architecture (planned)
 
