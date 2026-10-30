@@ -75,12 +75,14 @@ jobs:
         uses: anthropics/claude-code-action@c3d45e8e941e1b2ad7b278c57482d9c5bf1f35b3 # v1.0.99
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Only issue and PR-metadata commands. cargo is deliberately not
-          # allowed and there is no Rust toolchain step: build.rs, proc macros
+          # Only issue commands plus read-only `gh pr view`; `gh pr edit` is left
+          # out so PR text can't steer Claude into changing a PR's base, body or
+          # reviewers. cargo is deliberately not allowed and there is no Rust
+          # toolchain step: build.rs, proc macros
           # and test binaries would run checked-out (possibly fork) code with
           # the subscription token in scope. The action runs with acceptEdits,
           # so the edit tools are denied too (this job has nothing to edit).
           claude_args: |
             --model claude-fable-5-1
             --disallowedTools "Edit,MultiEdit,Write,NotebookEdit"
-            --allowedTools "Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr view:*),Bash(gh pr edit:*)"
+            --allowedTools "Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr view:*)"
