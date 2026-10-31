@@ -1,0 +1,102 @@
+# Claude Code on GitHub: reply to `@claude` mentions on issues, PRs and reviews.
+#
+# Runs through the Claude GitHub App, so comments and issues it creates are
+# authored by `claude[bot]`, not by a personal account.
+#
+# Requires, in repo Settings → Secrets and variables → Actions:
+#   CLAUDE_CODE_OAUTH_TOKEN   (Claude Max/Pro subscription token from running
+#                              `claude setup-token` locally; do not commit it)
+# and the Claude GitHub App installed on this repository.
+#
+# Only repository members, owners and collaborators can trigger it. Third-party
+# Actions are pinned to a commit SHA.
+name: Claude
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  # `assigned` is deliberately not a trigger: on that event
+  # `issue.author_association` describes the issue author, not the person
+  # assigning, so a collaborator assigning an outsider's issue would pass the
+  # collaborator check below with attacker-written text.
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+
+# No `concurrency` group on purpose: GitHub keeps only one pending run per
+# group, so queued @claude mentions (or a skipped non-mention comment) would
+# cancel each other and go unanswered. Parallel runs just reply separately.
+
+jobs:
+  claude:
+    name: Claude
+    if: |
+      (
+        github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      ) || (
+        github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      ) || (
+        github.event_name == 'pull_request_review' &&
+        contains(github.event.review.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)
+      ) || (
+        github.event_name == 'issues' &&
+        (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # These scopes cover only GITHUB_TOKEN. Claude itself acts with the Claude
+    # GitHub App token, whose scope comes from the App installation, so write
+    # access to code is blocked in `claude_args` below rather than here.
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      # Required by claude-code-action to exchange the job's OIDC token for the
+      # Claude GitHub App token; that exchange is what makes comments and
+      # issues show as `claude[bot]`. It grants no access to cloud providers
+      # unless a cloud trust policy is configured for this repository.
+      id-token: write
+      # Lets the action's CI tools read workflow runs and job logs on PRs.
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run Claude
+        # v1.0.260+ checks fork PRs out into `pr-<number>`, so a fork branch
+        # named `main` no longer collides with the base checkout.
+        uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # With API commit signing the action offers its commit_files and
+          # delete_files tools instead of `git add/commit/rm` and its push
+          # wrapper; both are denied below, so @claude cannot change code.
+          use_commit_signing: true
+          # Only issue commands plus read-only `gh pr view`; `gh pr edit` is left
+          # out so PR text can't steer Claude into changing a PR's base, body or
+          # reviewers. cargo is deliberately not allowed and there is no Rust
+          # toolchain step: build.rs, proc macros and test binaries would run
+          # checked-out (possibly fork) code with the subscription token in
+          # scope. The action runs with acceptEdits, so the edit tools are
+          # denied too (this job has nothing to edit). The action stores the App
+          # token in the remote URL in .git/config, so reads under .git/ are
+          # denied, and so is `gh --body-file`/`-F`, which reads a file itself.
+          # The action also revokes that token when the run ends.
+          claude_args: |
+            --model claude-fable-5-1
+            --disallowedTools "Edit,MultiEdit,Write,NotebookEdit,mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,Read(./.git/**),Bash(gh *--body-file*),Bash(gh *-F*)"
+            --allowedTools "Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr view:*)"
